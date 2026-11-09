@@ -1,0 +1,10 @@
+{
+  "name": "pi-notices",
+  "version": "0.1.0",
+  "description": "Notices for pi: each new line of a watched file arrives in the conversation as its own message, never through the text box.",
+  "license": "MIT",
+  "keywords": ["pi-package"],
+  "pi": { "extensions": ["./extensions"] },
+  "peerDependencies": { "@earendil-works/pi-coding-agent": "*" },
+  "scripts": { "test": "node --experimental-strip-types --no-warnings --test tests/*.test.ts" }
+}
