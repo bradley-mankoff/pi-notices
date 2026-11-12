@@ -305,6 +305,32 @@ test("lines written before the session started are not delivered", async () => {
 	}
 });
 
+test("a child process started from the session does not inherit PI_NOTICES_FILE, and the session still receives a Notice", async () => {
+	const workspace = makeWorkspace();
+	const pi = startPi(workspace);
+	try {
+		await pi.request({ type: "get_state" });
+
+		const { data } = await pi.request({ type: "bash", command: "printenv PI_NOTICES_FILE || true" });
+		assert.equal(
+			(data as { output: string }).output,
+			"",
+			"the child process was not handed the session's inbox",
+		);
+
+		const after = pi.events.length;
+		const notice = "Run 83d18718 for Bead pi-notices-qqd ended merged.";
+		appendNotice(workspace, notice);
+		await pi.waitForSettled(after);
+
+		const notices = await pi.notices();
+		assert.equal(notices.length, 1, "the session still received the Notice");
+		assert.match(contentOf(notices[0]), /Run 83d18718/);
+	} finally {
+		await pi.stop();
+	}
+});
+
 test("the extension does nothing when PI_NOTICES_FILE is unset", async () => {
 	const workspace = makeWorkspace();
 	const pi = startPi(workspace, { watch: false });
