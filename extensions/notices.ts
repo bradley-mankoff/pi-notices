@@ -3,7 +3,9 @@
  * of its own, never through the text box.
  *
  * `PI_NOTICES_FILE` names the file to watch. When it is unset the extension watches
- * nothing. For each new line it calls `pi.sendMessage` with a visible message,
+ * nothing. It is read once, when the extension loads, and then removed from the
+ * environment, so a process the session starts is not handed the same inbox
+ * (pi-notices-qqd). For each new line it calls `pi.sendMessage` with a visible message,
  * `triggerTurn: true` and `deliverAs: "followUp"`: an idle session starts a turn on the
  * line, and a busy one gets it when its turn ends. Nothing writes to the editor, so a
  * half-typed draft survives.
@@ -32,7 +34,7 @@ const takeNoticeFile = (): string | undefined => {
 type Watch = { stop: () => void };
 
 export default function notices(pi: ExtensionAPI): void {
-	const file = takeNoticeFile();
+	const noticeFile = takeNoticeFile();
 	let active: Watch | undefined;
 
 	const watchFile = (file: string): Watch => {
@@ -91,7 +93,7 @@ export default function notices(pi: ExtensionAPI): void {
 
 	pi.on("session_start", async () => {
 		active?.stop();
-		active = file ? watchFile(file) : undefined;
+		active = noticeFile ? watchFile(noticeFile) : undefined;
 	});
 	pi.on("session_shutdown", async () => {
 		active?.stop();

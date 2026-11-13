@@ -305,7 +305,9 @@ test("lines written before the session started are not delivered", async () => {
 	}
 });
 
-test("a child process started from the session does not inherit PI_NOTICES_FILE, and the session still receives a Notice", async () => {
+// The session's own reception with the setting still passed in is covered by the idle-Notice
+// test above, which starts pi the same way; this test checks only what a child process sees.
+test("a child process started from the session is not handed PI_NOTICES_FILE", async () => {
 	const workspace = makeWorkspace();
 	const pi = startPi(workspace);
 	try {
@@ -317,15 +319,6 @@ test("a child process started from the session does not inherit PI_NOTICES_FILE,
 			"",
 			"the child process was not handed the session's inbox",
 		);
-
-		const after = pi.events.length;
-		const notice = "Run 83d18718 for Bead pi-notices-qqd ended merged.";
-		appendNotice(workspace, notice);
-		await pi.waitForSettled(after);
-
-		const notices = await pi.notices();
-		assert.equal(notices.length, 1, "the session still received the Notice");
-		assert.match(contentOf(notices[0]), /Run 83d18718/);
 	} finally {
 		await pi.stop();
 	}
