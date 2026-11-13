@@ -305,6 +305,25 @@ test("lines written before the session started are not delivered", async () => {
 	}
 });
 
+// The session's own reception with the setting still passed in is covered by the idle-Notice
+// test above, which starts pi the same way; this test checks only what a child process sees.
+test("a child process started from the session is not handed PI_NOTICES_FILE", async () => {
+	const workspace = makeWorkspace();
+	const pi = startPi(workspace);
+	try {
+		await pi.request({ type: "get_state" });
+
+		const { data } = await pi.request({ type: "bash", command: "printenv PI_NOTICES_FILE || true" });
+		assert.equal(
+			(data as { output: string }).output,
+			"",
+			"the child process was not handed the session's inbox",
+		);
+	} finally {
+		await pi.stop();
+	}
+});
+
 test("the extension does nothing when PI_NOTICES_FILE is unset", async () => {
 	const workspace = makeWorkspace();
 	const pi = startPi(workspace, { watch: false });
