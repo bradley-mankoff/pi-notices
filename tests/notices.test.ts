@@ -217,6 +217,33 @@ const noticeMessages = (messages: Array<Record<string, unknown>>): Array<Record<
 const contentOf = (message: Record<string, unknown>): string =>
 	typeof message.content === "string" ? message.content : JSON.stringify(message.content);
 
+type RunningPi = ReturnType<typeof startPi>;
+
+/**
+ * Wait for the one turn the new session runs on `notice`, and check what reached it: the
+ * turn was sent the line, and the conversation holds that one Notice, carrying the line.
+ * `before` is how many requests the test provider had answered when the line was written,
+ * and `where` names the session in a failure message.
+ */
+async function assertOneNoticeTurn(
+	pi: RunningPi,
+	workspace: Workspace,
+	before: number,
+	notice: string,
+	where: string,
+): Promise<Request[]> {
+	const requests = (await waitForRequests(workspace.log, before + 1)).slice(before);
+	assert.equal(requests.length, 1, `the Notice started one turn in ${where}`);
+	assert.ok(
+		requests[0].messages.some((text) => text.includes(notice)),
+		`the turn in ${where} was sent the Notice: ${JSON.stringify(requests[0].messages)}`,
+	);
+	const notices = await pi.notices();
+	assert.equal(notices.length, 1, `the Notice arrives once in ${where}`);
+	assert.equal(contentOf(notices[0]), `Notice: ${notice}`, "the Notice carries the line the test wrote");
+	return requests;
+}
+
 test("a Notice written while the session is idle arrives once, visible, and starts a turn", async () => {
 	const workspace = makeWorkspace();
 	const pi = startPi(workspace);
@@ -358,21 +385,13 @@ test("a Notice written after new_session arrives in the new session", async () =
 
 		await pi.waitForSettled(after);
 
-		const requests = (await waitForRequests(workspace.log, before + 1)).slice(before);
-		assert.equal(requests.length, 1, "the Notice started one turn in the new session");
-		assert.ok(
-			requests[0].messages.some((text) => text.includes(notice)),
-			`the new session's turn was sent the Notice: ${JSON.stringify(requests[0].messages)}`,
-		);
-		const notices = await pi.notices();
-		assert.equal(notices.length, 1, "the Notice arrives once in the new session");
-		assert.match(contentOf(notices[0]), /Run 83d18718 .* ended merged\./);
+		await assertOneNoticeTurn(pi, workspace, before, notice, "the new session");
 	} finally {
 		await pi.stop();
 	}
 });
 
-test("a Notice written after a second new_session arrives in that session", async () => {
+test("a Notice written after two new_sessions arrives in the session that followed", async () => {
 	const workspace = makeWorkspace();
 	const pi = startPi(workspace);
 	try {
@@ -387,15 +406,7 @@ test("a Notice written after a second new_session arrives in that session", asyn
 
 		await pi.waitForSettled(after);
 
-		const requests = (await waitForRequests(workspace.log, before + 1)).slice(before);
-		assert.equal(requests.length, 1, "the Notice started one turn in the third session");
-		assert.ok(
-			requests[0].messages.some((text) => text.includes(notice)),
-			`the third session's turn was sent the Notice: ${JSON.stringify(requests[0].messages)}`,
-		);
-		const notices = await pi.notices();
-		assert.equal(notices.length, 1, "the Notice arrives once in the third session");
-		assert.match(contentOf(notices[0]), /Run 94e29829 .* ended failed\./);
+		await assertOneNoticeTurn(pi, workspace, before, notice, "the session after two rebuilds");
 	} finally {
 		await pi.stop();
 	}
@@ -424,19 +435,11 @@ test("lines written before a new session started are not replayed into it", asyn
 		appendNotice(workspace, notice);
 		await pi.waitForSettled(after);
 
-		const requests = (await waitForRequests(workspace.log, before + 1)).slice(before);
-		assert.equal(requests.length, 1, "the new line started one turn in the new session");
-		assert.ok(
-			requests[0].messages.some((text) => text.includes(notice)),
-			"the new session was sent the new line",
-		);
+		const requests = await assertOneNoticeTurn(pi, workspace, before, notice, "the new session");
 		assert.ok(
 			!requests[0].messages.some((text) => text.includes("15a3b94c")),
 			"the new session was not sent the line its predecessor had already taken",
 		);
-		const notices = await pi.notices();
-		assert.equal(notices.length, 1, "only the new line became a Notice in the new session");
-		assert.match(contentOf(notices[0]), /Run 26b4c05d/);
 	} finally {
 		await pi.stop();
 	}

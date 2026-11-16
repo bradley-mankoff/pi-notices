@@ -21,32 +21,28 @@ import { basename, dirname } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 /**
- * The key the first load leaves the Notice file under, on the process rather than this load.
- *
- * pi rebuilds every extension on `/new`, `/resume`, `/fork` and `/reload`, so this factory
- * runs again in the same process (pi-notices-49k). The environment no longer holds the
- * setting by then, and a per-load variable would lose the inbox.
+ * The key the first load leaves the Notice file under, on the process rather than this load,
+ * so the load after a runtime rebuild finds it (pi-notices-49k). `Symbol.for` reaches the
+ * process-wide registry, which a second copy of this file would share.
  */
 const noticeFileKey = Symbol.for("pi-notices.file");
 
-type Taken = { file?: string };
-
 /**
- * The file named by `PI_NOTICES_FILE`, or nothing when the setting is unset or empty.
+ * The file named by `PI_NOTICES_FILE`, or the one an earlier load in this process kept.
  *
  * The variable is removed once read. It names this session's inbox, and as an inherited
  * environment variable it would otherwise hand the same inbox to every process the
  * session starts, so a child pi would answer this session's Notices too (pi-notices-qqd).
- * A later load in the same process, whose variable was already removed, gets the file the
- * first load kept (pi-notices-49k).
+ * Because of that removal, a load whose variable is gone takes the file an earlier load
+ * kept on `globalThis` (pi-notices-49k).
  */
 const takeNoticeFile = (): string | undefined => {
-	const global = globalThis as typeof globalThis & { [noticeFileKey]?: Taken };
-	const taken = (global[noticeFileKey] ??= {});
+	// Every load in this process reaches the same slot, so the file outlives a rebuild.
+	const processWide = globalThis as typeof globalThis & { [noticeFileKey]?: string };
 	const inherited = process.env.PI_NOTICES_FILE || undefined;
 	delete process.env.PI_NOTICES_FILE;
-	if (inherited) taken.file = inherited;
-	return taken.file;
+	if (inherited) processWide[noticeFileKey] = inherited;
+	return processWide[noticeFileKey];
 };
 
 type Watch = { stop: () => void };
