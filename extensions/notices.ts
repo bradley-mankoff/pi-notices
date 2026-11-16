@@ -5,10 +5,12 @@
  * `PI_NOTICES_FILE` names the file to watch. When it is unset the extension watches
  * nothing. It is read once, when the extension loads, and then removed from the
  * environment, so a process the session starts is not handed the same inbox
- * (pi-notices-qqd). For each new line it calls `pi.sendMessage` with a visible message,
- * `triggerTurn: true` and `deliverAs: "followUp"`: an idle session starts a turn on the
- * line, and a busy one gets it when its turn ends. Nothing writes to the editor, so a
- * half-typed draft survives.
+ * (pi-notices-qqd). The file it read is kept for the process, so the loads after a
+ * runtime rebuild (`/new`, `/resume`, `/fork`, `/reload`) find it with the variable
+ * already gone (pi-notices-49k). For each new line it calls `pi.sendMessage` with a
+ * visible message, `triggerTurn: true` and `deliverAs: "followUp"`: an idle session
+ * starts a turn on the line, and a busy one gets it when its turn ends. Nothing writes
+ * to the editor, so a half-typed draft survives.
  *
  * Only lines written after the session started are delivered: the file's length at
  * `session_start` is the starting point, so earlier lines are not replayed to whoever
@@ -19,16 +21,32 @@ import { basename, dirname } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 /**
+ * The key the first load leaves the Notice file under, on the process rather than this load.
+ *
+ * pi rebuilds every extension on `/new`, `/resume`, `/fork` and `/reload`, so this factory
+ * runs again in the same process (pi-notices-49k). The environment no longer holds the
+ * setting by then, and a per-load variable would lose the inbox.
+ */
+const noticeFileKey = Symbol.for("pi-notices.file");
+
+type Taken = { file?: string };
+
+/**
  * The file named by `PI_NOTICES_FILE`, or nothing when the setting is unset or empty.
  *
  * The variable is removed once read. It names this session's inbox, and as an inherited
  * environment variable it would otherwise hand the same inbox to every process the
  * session starts, so a child pi would answer this session's Notices too (pi-notices-qqd).
+ * A later load in the same process, whose variable was already removed, gets the file the
+ * first load kept (pi-notices-49k).
  */
 const takeNoticeFile = (): string | undefined => {
-	const file = process.env.PI_NOTICES_FILE || undefined;
+	const global = globalThis as typeof globalThis & { [noticeFileKey]?: Taken };
+	const taken = (global[noticeFileKey] ??= {});
+	const inherited = process.env.PI_NOTICES_FILE || undefined;
 	delete process.env.PI_NOTICES_FILE;
-	return file;
+	if (inherited) taken.file = inherited;
+	return taken.file;
 };
 
 type Watch = { stop: () => void };

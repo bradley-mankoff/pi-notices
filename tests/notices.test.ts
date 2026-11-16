@@ -343,3 +343,101 @@ test("the extension does nothing when PI_NOTICES_FILE is unset", async () => {
 		await pi.stop();
 	}
 });
+
+test("a Notice written after new_session arrives in the new session", async () => {
+	const workspace = makeWorkspace();
+	const pi = startPi(workspace);
+	try {
+		await pi.request({ type: "get_state" });
+		const before = readRequests(workspace.log).length;
+		const after = pi.events.length;
+		await pi.request({ type: "new_session" });
+
+		const notice = "Run 83d18718 for Bead pi-notices-ac8 ended merged.";
+		appendNotice(workspace, notice);
+
+		await pi.waitForSettled(after);
+
+		const requests = (await waitForRequests(workspace.log, before + 1)).slice(before);
+		assert.equal(requests.length, 1, "the Notice started one turn in the new session");
+		assert.ok(
+			requests[0].messages.some((text) => text.includes(notice)),
+			`the new session's turn was sent the Notice: ${JSON.stringify(requests[0].messages)}`,
+		);
+		const notices = await pi.notices();
+		assert.equal(notices.length, 1, "the Notice arrives once in the new session");
+		assert.match(contentOf(notices[0]), /Run 83d18718 .* ended merged\./);
+	} finally {
+		await pi.stop();
+	}
+});
+
+test("a Notice written after a second new_session arrives in that session", async () => {
+	const workspace = makeWorkspace();
+	const pi = startPi(workspace);
+	try {
+		await pi.request({ type: "get_state" });
+		await pi.request({ type: "new_session" });
+		await pi.request({ type: "new_session" });
+		const before = readRequests(workspace.log).length;
+		const after = pi.events.length;
+
+		const notice = "Run 94e29829 for Bead pi-notices-ac9 ended failed.";
+		appendNotice(workspace, notice);
+
+		await pi.waitForSettled(after);
+
+		const requests = (await waitForRequests(workspace.log, before + 1)).slice(before);
+		assert.equal(requests.length, 1, "the Notice started one turn in the third session");
+		assert.ok(
+			requests[0].messages.some((text) => text.includes(notice)),
+			`the third session's turn was sent the Notice: ${JSON.stringify(requests[0].messages)}`,
+		);
+		const notices = await pi.notices();
+		assert.equal(notices.length, 1, "the Notice arrives once in the third session");
+		assert.match(contentOf(notices[0]), /Run 94e29829 .* ended failed\./);
+	} finally {
+		await pi.stop();
+	}
+});
+
+test("lines written before a new session started are not replayed into it", async () => {
+	const workspace = makeWorkspace();
+	const pi = startPi(workspace);
+	try {
+		await pi.request({ type: "get_state" });
+		const first = pi.events.length;
+		const earlier = "Run 15a3b94c for Bead pi-notices-aca ended merged.";
+		appendNotice(workspace, earlier);
+		await pi.waitForSettled(first);
+		assert.equal(
+			(await pi.notices()).length,
+			1,
+			"the first session took the line written while it ran",
+		);
+
+		await pi.request({ type: "new_session" });
+		const before = readRequests(workspace.log).length;
+		const after = pi.events.length;
+
+		const notice = "Run 26b4c05d for Bead pi-notices-acb ended failed.";
+		appendNotice(workspace, notice);
+		await pi.waitForSettled(after);
+
+		const requests = (await waitForRequests(workspace.log, before + 1)).slice(before);
+		assert.equal(requests.length, 1, "the new line started one turn in the new session");
+		assert.ok(
+			requests[0].messages.some((text) => text.includes(notice)),
+			"the new session was sent the new line",
+		);
+		assert.ok(
+			!requests[0].messages.some((text) => text.includes("15a3b94c")),
+			"the new session was not sent the line its predecessor had already taken",
+		);
+		const notices = await pi.notices();
+		assert.equal(notices.length, 1, "only the new line became a Notice in the new session");
+		assert.match(contentOf(notices[0]), /Run 26b4c05d/);
+	} finally {
+		await pi.stop();
+	}
+});
